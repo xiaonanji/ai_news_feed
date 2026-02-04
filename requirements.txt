@@ -1,0 +1,11 @@
+﻿feedparser
+requests
+readability-lxml
+trafilatura
+beautifulsoup4
+PyYAML
+python-dateutil
+openai
+jsonschema
+tenacity
+python-dotenv

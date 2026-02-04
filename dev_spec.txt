@@ -1,0 +1,592 @@
+AI 驱动 RSS 周报整理器 — 交付级需求与技术规格（v1.0）
+
+文档状态：可开发
+范围：本地运行（CLI/定时任务），RSS 订阅源由用户维护，自动抓取增量新闻 → 中文总结 → 自动分类 → Markdown 落盘。
+默认时区：Australia/Melbourne（系统本地时间）
+
+1. 背景与目标
+1.1 背景
+
+用户希望持续获取 AI 相关新闻，但不想每天手动浏览。更希望每周自动生成结构化周报，并可在本地长期保存、搜索与回顾。
+
+1.2 目标（MVP）
+
+用户维护 RSS 订阅清单（随时增删改）
+
+定期（默认每周，用户可设）扫描新增 RSS 条目
+
+对每条新闻治理：提取正文 → 清洗 → 中文总结
+
+对每条新闻：自动分类（12 大类）+ 标签 + 影响评级
+
+以 Markdown 统一模板写入本地 md 文件（按周分文件，按类目分组）
+
+2. 用户故事与使用流程
+2.1 用户故事
+
+作为用户，我希望添加/删除 RSS 源，以便控制信息来源。
+
+作为用户，我希望系统每周自动抓取新增新闻，并生成中文摘要，节省阅读时间。
+
+作为用户，我希望新闻按类目分组输出，快速定位“模型发布/政策/商业”等重点。
+
+作为用户，我希望系统幂等（重复运行不重复写入），且失败可恢复。
+
+2.2 典型流程
+
+编辑 config.yaml 添加 RSS 源
+
+设置每周 cron 或内置调度
+
+运行任务：抓取 → 增量过滤 → 总结+分类 → 写 Markdown → 更新 SQLite
+
+打开输出 md 阅读与检索（可配合 Obsidian）
+
+3. 功能需求（PRD）
+3.1 订阅源管理（手动）
+
+添加 RSS 源：name, url, enabled
+
+删除 RSS 源
+
+启用/禁用 RSS 源
+
+查看 RSS 源列表：状态、最近抓取时间、错误次数、最近错误
+
+实现形态（MVP）：配置文件为主（可选增加 CLI 命令管理）
+
+3.2 定期扫描与增量抓取
+
+运行频率：默认每周；支持 cron 表达式
+
+增量：仅处理“未处理过”的条目（去重）
+
+容错：单源失败不影响其他源；记录错误；下次继续
+
+并发：可配置（抓取/总结并发数）
+
+3.3 新闻治理（正文抽取 + 清洗 + 中文总结）
+
+对每条新闻生成必需字段：
+
+title：标题
+
+url：链接
+
+summary_zh：中文总结（要点 + so what）
+
+source：来源（feed 名称/域名）
+
+collected_at：收录时间（本地时间）
+
+建议扩展字段（MVP 可存但不强制展示）：
+
+published_at：发布时间（若有）
+
+author：作者（若有）
+
+rss_summary：RSS 原始摘要
+
+content_status：full / rss_only / failed
+
+治理规则：
+
+优先抓取文章正文并提取主内容；失败则使用 RSS summary
+
+中文总结：3–7 条要点 + 1 句“意义/影响”
+
+3.4 自动分类与标签（12 大类）
+
+每条新闻输出：
+
+primary_category_id：12 选 1（必填）
+
+tags：3–8 个（中文短词，尽量 2–6 字，不带 #）
+
+impact：High / Medium / Low（可选但建议）
+
+reason：1–2 句解释（用于审计与可解释性）
+
+策略：
+
+主流程：LLM 依据 taxonomy 的定义进行分类（definition/include/exclude/tie_breaker）
+
+失败兜底：关键词匹配 fallback（只在 LLM 失败时用）
+
+3.5 Markdown 输出（本地落盘）
+
+输出模式：
+
+weekly_file（推荐）：每周一个文件
+
+single_file：单文件追加
+
+分组输出：
+
+by_category（推荐）：按类目小节输出
+
+flat：逐条输出
+
+去重：同一条（url/guid）只写入一次
+
+排序：可配置（新到旧/旧到新；impact 优先）
+
+4. 非功能需求
+
+幂等：重复运行不重复写入、不重复落库
+
+可恢复：中断后再运行可继续处理未完成项
+
+可追溯：每条记录保留 url/source/time/分类理由
+
+可维护：所有行为（feed、taxonomy、调度、输出、模型）均可配置
+
+性能：每周几百条规模可在单机完成；并发与限流可控
+
+5. 技术方案（Tech Spec）
+5.1 架构概览
+
+本地 CLI/服务进程：
+
+读取配置
+
+抓取 RSS
+
+增量过滤（SQLite dedup）
+
+正文抽取与清洗
+
+LLM：一次生成总结+分类+标签+impact
+
+写 Markdown（按类目分组）
+
+更新 SQLite（items 状态）
+
+5.2 技术选型（推荐 Python）
+
+RSS：feedparser
+
+正文提取：readability-lxml（可选 trafilatura 兜底）
+
+HTML 清洗：beautifulsoup4
+
+调度：系统 cron（推荐）或 APScheduler
+
+状态库：SQLite
+
+LLM：OpenAI API（可替换）
+
+6. 配置文件（config.yaml）— 交付规范
+
+该配置是系统唯一配置入口（SSOT）。MVP 以此为准。
+
+feeds:
+  - name: "DeepLearning.AI The Batch"
+    url: "https://www.deeplearning.ai/the-batch/feed/"
+    enabled: true
+  - name: "Import AI"
+    url: "https://jack-clark.net/feed/"
+    enabled: true
+
+schedule:
+  mode: "cron"
+  cron: "0 9 * * MON"  # 每周一 09:00（本地时间）
+
+output:
+  mode: "weekly_file"               # single_file | weekly_file
+  path: "./output"
+  filename_template: "ai_news_{year}-W{week}.md"
+  grouping: "by_category"           # by_category | flat
+  append_order: "newest_first"      # newest_first | oldest_first
+  include_toc: true
+  include_frontmatter: false
+
+dedup:
+  key: "url_or_guid"                # url | guid | url_or_guid
+
+summarizer:
+  provider: "openai"
+  model: "gpt-4.1-mini"
+  language: "zh-CN"
+  max_chars_input: 12000
+  timeout_sec: 60
+  concurrency: 3
+  retries: 3
+
+classification:
+  mode: "llm_with_keyword_fallback" # llm_only | keyword_only | llm_with_keyword_fallback
+  require_primary_category: true
+  tag_count_range: [3, 8]
+  include_impact: true
+
+taxonomy:
+  allow_multi_label: false
+  default_category: "products_apps"
+
+  categories:
+    - id: "model_releases"
+      name_zh: "模型与能力发布"
+      definition: "新闻核心在于基础模型/多模态模型/专用模型的发布或能力升级，重点是模型本身的能力、评测、对比与规格变化。"
+      include: ["新模型/新版本发布","能力升级：推理/多模态/长上下文/代码","基准评测与模型对比","模型规格变化（以模型为主）"]
+      exclude: ["产品上线功能为主→产品与应用","训练数据/训练流程为主→数据与训练/研究","算力硬件与部署成本为主→基础设施与算力"]
+      tie_breaker: "若反复讨论模型能力/评测/规格选本类；若反复讨论产品功能不选本类。"
+      keywords: ["model","benchmark","SOTA","reasoning","multimodal","context","release","模型","版本","评测"]
+
+    - id: "products_apps"
+      name_zh: "产品与应用"
+      definition: "新闻核心在于面向用户/企业的产品功能与应用落地，重点是做了什么功能、解决什么问题、如何使用。"
+      include: ["产品/功能上线","企业集成与落地案例","产品定价/套餐（以产品为中心）"]
+      exclude: ["模型发布/评测为主→模型与能力发布","融资并购/财报为主→商业与资本","SDK/框架为主→开发者生态"]
+      tie_breaker: "读者关心‘我能用它做什么’通常选本类。"
+      keywords: ["product","feature","launch","copilot","assistant","integration","功能","上线","应用","企业"]
+
+    - id: "agents_automation"
+      name_zh: "Agent 与自动化"
+      definition: "新闻核心在于 AI 代理的多步规划、工具调用与自动化工作流执行，强调自治与编排。"
+      include: ["工具调用/多步执行","多代理协作与规划","自动化工作流落地"]
+      exclude: ["只是‘助手’无执行工作流特征→产品与应用","安全攻防为主→安全、对齐与红队","纯框架介绍无 agent 行为→开发者生态"]
+      tie_breaker: "出现‘能自己完成多步任务/调用外部工具/执行工作流’是强信号。"
+      keywords: ["agent","automation","tool use","function calling","workflow","orchestration","multi-agent","RPA"]
+
+    - id: "dev_tools_platforms"
+      name_zh: "开发者生态"
+      definition: "新闻核心在于面向开发者的构建能力：API/SDK/框架/部署平台与工程化工具，重点是怎么开发、怎么集成、怎么部署。"
+      include: ["API/SDK 更新","RAG/向量/embedding 工具链","Serving/MLOps/评测与监控"]
+      exclude: ["终端产品功能为主→产品与应用","硬件算力为主→基础设施与算力","学术新方法为主→研究与论文"]
+      tie_breaker: "面向读者若是开发者/工程师，大概率在本类。"
+      keywords: ["API","SDK","framework","LangChain","LlamaIndex","RAG","vector","embedding","MLOps","serving"]
+
+    - id: "data_training"
+      name_zh: "数据与训练"
+      definition: "新闻核心在于训练与数据：数据来源/治理/合成数据/微调蒸馏/RLHF 等训练流程与效率成本。"
+      include: ["训练数据策略/数据集","微调/蒸馏/RLHF/RLAIF","合成数据与训练配方"]
+      exclude: ["论文新结构新算法→研究与论文","模型发布与能力结果→模型与能力发布","隐私条款与合规实践→隐私与合规"]
+      tie_breaker: "是否在讲‘训练过程/数据集/配方’，而不是‘能力结果/产品功能’。"
+      keywords: ["dataset","training","finetune","distillation","RLHF","RLAIF","synthetic data","训练","微调","蒸馏"]
+
+    - id: "compute_infra"
+      name_zh: "基础设施与算力"
+      definition: "新闻核心在于算力与基础设施：芯片/GPU、云资源、推理吞吐延迟、部署架构、成本与能耗。"
+      include: ["GPU/芯片/加速器","云推理/训练资源与价格","推理性能指标与数据中心能耗"]
+      exclude: ["开发工具链为主→开发者生态","商业交易为主→商业与资本","模型能力升级为主→模型与能力发布"]
+      tie_breaker: "讨论硬件/云资源/性能指标/成本能耗为主线即本类。"
+      keywords: ["GPU","chip","H100","B200","TPU","inference","latency","throughput","data center","cost","算力","能耗"]
+
+    - id: "research"
+      name_zh: "研究与论文"
+      definition: "新闻核心在于研究成果：新方法、新理论、新基准或实验与证据，文章结构更像论文摘要/方法/实验。"
+      include: ["arXiv/会议论文","方法创新与实验结果","新基准与研究讨论"]
+      exclude: ["产品更新→产品与应用","商业发布稿式模型发布→模型与能力发布","开源许可证与权重→开源与社区"]
+      tie_breaker: "更像论文与实验报告，而不是发布稿与产品更新。"
+      keywords: ["paper","arxiv","method","experiment","conference","论文","研究","消融"]
+
+    - id: "open_source_community"
+      name_zh: "开源与社区"
+      definition: "新闻核心在于开源生态：开源模型/权重/代码与许可证变化，强调可获得、可复现、可贡献。"
+      include: ["开源权重/代码发布或重大更新","许可证变化","社区复现与评测"]
+      exclude: ["模型能力发布但非开源叙事→模型与能力发布","商业 API 平台为主→开发者生态"]
+      tie_breaker: "主卖点是‘开源/权重/代码/许可证’优先本类。"
+      keywords: ["open source","weights","license","github","community","开源","权重","许可证"]
+
+    - id: "safety_alignment"
+      name_zh: "安全、对齐与红队"
+      definition: "新闻核心在于风险与防护：越狱、提示注入、红队、安全评估、漏洞披露与防护机制。"
+      include: ["越狱/提示注入/对抗攻击","红队报告与安全评估","风险事件与防护策略"]
+      exclude: ["法规条文与监管趋势→政策与监管","隐私合规治理→隐私与合规","偏研究论文且非事件/防护主线→研究与论文"]
+      tie_breaker: "‘漏洞/攻击/越狱/防护/红队’且为主线就选本类。"
+      keywords: ["safety","alignment","red team","jailbreak","prompt injection","漏洞","攻击","防护","审计"]
+
+    - id: "privacy_compliance"
+      name_zh: "隐私与合规"
+      definition: "新闻核心在于隐私与企业合规：PII、数据留存、访问控制、审计、GDPR 等合规实践与要求。"
+      include: ["PII/敏感数据处理与留存","企业合规框架与审计要求","数据隔离与安全认证（合规主线）"]
+      exclude: ["国家立法与监管趋势→政策与监管","攻防漏洞为主→安全、对齐与红队"]
+      tie_breaker: "关注‘能否合规使用/如何合规’，而非‘被如何攻击’。"
+      keywords: ["privacy","PII","GDPR","compliance","data governance","隐私","合规","数据治理"]
+
+    - id: "policy_regulation"
+      name_zh: "政策与监管"
+      definition: "新闻核心在于政府/监管/标准组织对 AI 的规则、限制与标准制定，关注法律政策变化及行业约束。"
+      include: ["AI 法案/条例/监管指南","标准制定","出口管制与国家安全限制","监管趋势"]
+      exclude: ["企业内部合规实践→隐私与合规","融资并购与财报→商业与资本"]
+      tie_breaker: "主体是政府/监管/标准机构，讨论规则与约束即本类。"
+      keywords: ["regulation","policy","AI Act","bill","standard","监管","政策","法案","出口管制"]
+
+    - id: "business_finance"
+      name_zh: "商业与资本"
+      definition: "新闻核心在于商业与资本动作：融资、并购、财报、商业模式、合作与竞争格局，关注钱、交易、增长与策略。"
+      include: ["融资/并购/投资/估值","财报与收入","定价策略与市场份额","战略合作与竞争"]
+      exclude: ["产品功能更新→产品与应用","法规监管→政策与监管","硬件算力技术→基础设施与算力"]
+      tie_breaker: "最重要信息若是融资多少/并购谁/财报如何/竞争合作，选本类。"
+      keywords: ["funding","acquisition","earnings","revenue","valuation","partnership","融资","并购","财报","估值","合作"]
+
+7. 数据库设计（SQLite）
+7.1 表：feeds
+
+id INTEGER PK
+
+name TEXT
+
+url TEXT UNIQUE
+
+enabled INTEGER
+
+last_fetch_at TEXT
+
+fail_count INTEGER
+
+last_error TEXT
+
+7.2 表：items
+
+id INTEGER PK
+
+feed_id INTEGER FK
+
+guid TEXT NULL
+
+url TEXT
+
+dedup_key TEXT UNIQUE
+
+title TEXT
+
+author TEXT NULL
+
+published_at TEXT NULL
+
+collected_at TEXT
+
+content_status TEXT # full | rss_only | failed
+
+summary_zh TEXT # 可由 bullets+so_what 拼接保存，或分字段
+
+primary_category TEXT
+
+tags_json TEXT # JSON string
+
+impact TEXT NULL # High/Medium/Low
+
+category_confidence REAL NULL
+
+category_reason TEXT NULL
+
+status TEXT # processed | failed | skipped
+
+error TEXT NULL
+
+去重：dedup_key = url_or_guid/url/guid（由 config 决定）
+
+8. 抓取与处理流程（幂等）
+
+读取启用的 feeds
+
+拉取 RSS，解析 entries
+
+生成 dedup_key
+
+若 items 已存在该 key → skip
+
+否则：
+
+抓取正文（可选）→ 清洗 → 得到 content 与 content_status
+
+调用 LLM（总结+分类）→ 校验 JSON
+
+写入 Markdown
+
+写入 SQLite（status=processed）
+
+任意失败：记录 error，不影响其他源/其他条目
+
+9. LLM 总结+分类：最终 Prompt 与校验
+9.1 System Prompt
+你是一个严谨的中文新闻编辑与分类器。你必须只输出严格的 JSON，不要输出任何多余文字、Markdown、代码块、解释或前后缀。
+
+分类要求：
+- 只能选择一个主类目 primary_category_id（从给定 taxonomy 的 categories[*].id 中选择）。
+- 优先选择“文章叙事主线”所在的类目，不要因为文章提到某个词就改类目。
+- reason 必须引用你所选类目的 definition/include/exclude 的关键边界（用自己的话复述即可）。
+- 若信息不足，仍需选择最合理的一个主类目，并降低 confidence。
+
+9.2 User Prompt（模板）
+请根据以下文章信息生成“中文摘要 + 主类目 + 标签 + 影响评级”。请严格遵守输出 JSON 格式与字段约束。
+
+【文章信息】
+title: {title}
+source: {source}
+url: {url}
+published_at: {published_at_or_null}
+content:
+{content}
+
+【taxonomy】
+{taxonomy_json_or_yaml_excerpt}
+
+【输出要求】
+- 只输出 JSON，对应字段：
+  summary_bullets_zh(3-7条), so_what_zh(1句),
+  primary_category_id(必须是taxonomy中的id),
+  tags(3-8个中文短词，不要#),
+  impact(High/Medium/Low),
+  confidence(0.0-1.0),
+  reason(1-2句，引用definition/include/exclude边界)
+
+9.3 输出 JSON 约束（Schema）
+
+（用于程序校验，不通过就重试/兜底）
+
+{
+  "type": "object",
+  "required": ["summary_bullets_zh","so_what_zh","primary_category_id","tags","impact","confidence","reason"],
+  "properties": {
+    "summary_bullets_zh": {"type":"array","minItems":3,"maxItems":7,"items":{"type":"string"}},
+    "so_what_zh": {"type":"string"},
+    "primary_category_id": {"type":"string"},
+    "tags": {"type":"array","minItems":3,"maxItems":8,"items":{"type":"string"}},
+    "impact": {"type":"string","enum":["High","Medium","Low"]},
+    "confidence": {"type":"number","minimum":0,"maximum":1},
+    "reason": {"type":"string"}
+  },
+  "additionalProperties": false
+}
+
+9.4 冲突裁决优先级（降低漂移）
+
+当跨类难判时按主叙事优先级：
+
+policy_regulation
+
+business_finance
+
+model_releases
+
+products_apps
+
+agents_automation
+
+compute_infra
+
+data_training
+
+dev_tools_platforms
+
+safety_alignment
+
+privacy_compliance
+
+open_source_community
+
+research
+
+10. Fallback：关键词兜底分类（仅在 LLM 失败时）
+
+触发条件：超时/报错/JSON 无法解析/Schema 不通过/类目不在 12 类中。
+
+算法：
+
+text = title + rss_summary + content_head(前2000字符)
+
+对每个 category：关键词命中计分（title 命中可 *2 加权）
+
+取最高分；全 0 用 default_category
+
+tags 可从命中关键词中挑 3–5 个；impact=Medium；confidence=0.3
+
+11. Markdown 输出规范（可验收）
+11.1 文件级头部（weekly_file）
+# AI Weekly Digest — {year}-W{week}
+生成时间：{now_local} (Australia/Melbourne)
+
+11.2 by_category（推荐）
+
+按 taxonomy 顺序输出小节（即 config 中 categories 顺序）：
+
+## 模型与能力发布
+### {title}
+- 来源：{source}
+- 发布：{published_at_or_Unknown}
+- 收录：{collected_at}
+- 链接：{url}
+
+**摘要**
+- {bullet1}
+- {bullet2}
+- {bullet3}
+
+**意义**
+{so_what}
+
+**标签**：#{tag1} #{tag2} #{tag3}
+---
+
+
+排序建议：
+
+类目内：impact High → Medium → Low
+
+同 impact：按 published_at（若无则 collected_at）从新到旧
+
+12. 调度与运行方式
+12.1 推荐（系统 cron）
+
+cron 触发：python main.py run --config config.yaml
+
+好处：最稳定，不需要常驻进程
+
+12.2 可选（APScheduler）
+
+程序常驻，读取 cron 表达式执行
+
+13. 日志与错误处理
+13.1 日志
+
+logs/app-YYYY-MM-DD.log
+
+记录：feed 拉取耗时、条目数、新增数、失败数、LLM 失败率
+
+13.2 错误策略
+
+RSS 拉取失败：标记 feed fail_count + last_error，继续其他源
+
+正文抽取失败：content_status=rss_only，仍进行总结/分类
+
+LLM 失败：触发关键词兜底；若兜底也失败，标记 item failed
+
+写文件失败：不更新 processed 状态（避免“库有但文件没有”），或采用事务策略（实现时二选一并写清）
+
+14. 验收标准（MVP）
+
+配置 5 个 RSS 源，运行一次能生成本周 md 文件，并写入新增条目
+
+重复运行同一周/同一批新闻不重复写入（幂等）
+
+每条新闻包含：title、url、summary_zh、source、collected_at
+
+每条新闻包含：primary_category（12 选 1）、tags（3–8）、impact
+
+输出按类目分组，类目顺序与 taxonomy 一致
+
+任一 RSS 源报错不影响其他源的处理，日志与 DB 有记录
+
+15. 里程碑
+
+MVP（核心交付）
+
+RSS 增量抓取 + SQLite 去重
+
+正文抽取/兜底
+
+LLM 总结+分类（严格 JSON）+ fallback
+
+Markdown 输出（weekly_file + by_category）
+
+增强
+
+去重合并（多来源同一事件合并）
+
+生成“本周 Top10（impact=High）”摘要页
+
+Web UI 管理 feeds 与配置
+
+保存全文/离线归档

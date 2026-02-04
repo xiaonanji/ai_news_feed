@@ -1,0 +1,155 @@
+﻿feeds:
+  - name: "Import AI"
+    url: "https://jack-clark.net/feed/"
+    enabled: true
+
+web_sources:
+  - name: "DeepLearning.AI The Batch"
+    list_url: "https://www.deeplearning.ai/the-batch/"
+    enabled: true
+    include_url_regex: "/the-batch/tag/"
+    exclude_url_regex: "/page/"
+    max_items: 30
+
+schedule:
+  mode: "cron"
+  cron: "0 9 * * MON"
+
+storage:
+  db_path: "./data/ai_news.db"
+
+output:
+  mode: "weekly_file"               # single_file | weekly_file
+  path: "./output"
+  filename_template: "ai_news_{year}-W{week}.md"
+  grouping: "by_category"           # by_category | flat
+  append_order: "newest_first"      # newest_first | oldest_first
+  include_toc: true
+  include_frontmatter: false
+  include_weekly_blog: true
+  blog_filename_template: "ai_news_{year}-W{week}_summary.md"
+
+dedup:
+  key: "url_or_guid"                # url | guid | url_or_guid
+
+summarizer:
+  provider: "openai"
+  model: "gpt-4.1-mini"
+  language: "zh-CN"
+  max_chars_input: 12000
+  timeout_sec: 60
+  concurrency: 3
+  retries: 3
+  api_key_env: "OPENAI_API_KEY"
+  api_key_file: ""
+
+blog:
+  model: "gpt-4.1-mini"
+  max_chars_input: 20000
+
+classification:
+  mode: "llm_with_keyword_fallback" # llm_only | keyword_only | llm_with_keyword_fallback
+  require_primary_category: true
+  tag_count_range: [3, 8]
+  include_impact: true
+
+taxonomy:
+  allow_multi_label: false
+  default_category: "products_apps"
+
+  categories:
+    - id: "model_releases"
+      name_zh: "模型与能力发布"
+      definition: "新闻核心在于基础模型/多模态模型/专用模型的发布或能力升级，重点是模型本身的能力、评测、对比与规格变化。"
+      include: ["新模型/新版本发布","能力升级：推理/多模态/长上下文/代码","基准评测与模型对比","模型规格变化（以模型为主）"]
+      exclude: ["产品上线功能为主→产品与应用","训练数据/训练流程为主→数据与训练/研究","算力硬件与部署成本为主→基础设施与算力"]
+      tie_breaker: "若反复讨论模型能力/评测/规格选本类；若反复讨论产品功能不选本类。"
+      keywords: ["model","benchmark","SOTA","reasoning","multimodal","context","release","模型","版本","评测"]
+
+    - id: "products_apps"
+      name_zh: "产品与应用"
+      definition: "新闻核心在于面向用户/企业的产品功能与应用落地，重点是做了什么功能、解决什么问题、如何使用。"
+      include: ["产品/功能上线","企业集成与落地案例","产品定价/套餐（以产品为中心）"]
+      exclude: ["模型发布/评测为主→模型与能力发布","融资并购/财报为主→商业与资本","SDK/框架为主→开发者生态"]
+      tie_breaker: "读者关心‘我能用它做什么’通常选本类。"
+      keywords: ["product","feature","launch","copilot","assistant","integration","功能","上线","应用","企业"]
+
+    - id: "agents_automation"
+      name_zh: "Agent 与自动化"
+      definition: "新闻核心在于 AI 代理的多步规划、工具调用与自动化工作流执行，强调自治与编排。"
+      include: ["工具调用/多步执行","多代理协作与规划","自动化工作流落地"]
+      exclude: ["只是‘助手’无执行工作流特征→产品与应用","安全攻防为主→安全、对齐与红队","纯框架介绍无 agent 行为→开发者生态"]
+      tie_breaker: "出现‘能自己完成多步任务/调用外部工具/执行工作流’是强信号。"
+      keywords: ["agent","automation","tool use","function calling","workflow","orchestration","multi-agent","RPA"]
+
+    - id: "dev_tools_platforms"
+      name_zh: "开发者生态"
+      definition: "新闻核心在于面向开发者的构建能力：API/SDK/框架/部署平台与工程化工具，重点是怎么开发、怎么集成、怎么部署。"
+      include: ["API/SDK 更新","RAG/向量/embedding 工具链","Serving/MLOps/评测与监控"]
+      exclude: ["终端产品功能为主→产品与应用","硬件算力为主→基础设施与算力","学术新方法为主→研究与论文"]
+      tie_breaker: "面向读者若是开发者/工程师，大概率在本类。"
+      keywords: ["API","SDK","framework","LangChain","LlamaIndex","RAG","vector","embedding","MLOps","serving"]
+
+    - id: "data_training"
+      name_zh: "数据与训练"
+      definition: "新闻核心在于训练与数据：数据来源/治理/合成数据/微调蒸馏/RLHF 等训练流程与效率成本。"
+      include: ["训练数据策略/数据集","微调/蒸馏/RLHF/RLAIF","合成数据与训练配方"]
+      exclude: ["论文新结构新算法→研究与论文","模型发布与能力结果→模型与能力发布","隐私条款与合规实践→隐私与合规"]
+      tie_breaker: "是否在讲‘训练过程/数据集/配方’，而不是‘能力结果/产品功能’。"
+      keywords: ["dataset","training","finetune","distillation","RLHF","RLAIF","synthetic data","训练","微调","蒸馏"]
+
+    - id: "compute_infra"
+      name_zh: "基础设施与算力"
+      definition: "新闻核心在于算力与基础设施：芯片/GPU、云资源、推理吞吐延迟、部署架构、成本与能耗。"
+      include: ["GPU/芯片/加速器","云推理/训练资源与价格","推理性能指标与数据中心能耗"]
+      exclude: ["开发工具链为主→开发者生态","商业交易为主→商业与资本","模型能力升级为主→模型与能力发布"]
+      tie_breaker: "讨论硬件/云资源/性能指标/成本能耗为主线即本类。"
+      keywords: ["GPU","chip","H100","B200","TPU","inference","latency","throughput","data center","cost","算力","能耗"]
+
+    - id: "research"
+      name_zh: "研究与论文"
+      definition: "新闻核心在于研究成果：新方法、新理论、新基准或实验与证据，文章结构更像论文摘要/方法/实验。"
+      include: ["arXiv/会议论文","方法创新与实验结果","新基准与研究讨论"]
+      exclude: ["产品更新→产品与应用","商业发布稿式模型发布→模型与能力发布","开源许可证与权重→开源与社区"]
+      tie_breaker: "更像论文与实验报告，而不是发布稿与产品更新。"
+      keywords: ["paper","arxiv","method","experiment","conference","论文","研究","消融"]
+
+    - id: "open_source_community"
+      name_zh: "开源与社区"
+      definition: "新闻核心在于开源生态：开源模型/权重/代码与许可证变化，强调可获得、可复现、可贡献。"
+      include: ["开源权重/代码发布或重大更新","许可证变化","社区复现与评测"]
+      exclude: ["模型能力发布但非开源叙事→模型与能力发布","商业 API 平台为主→开发者生态"]
+      tie_breaker: "主卖点是‘开源/权重/代码/许可证’优先本类。"
+      keywords: ["open source","weights","license","github","community","开源","权重","许可证"]
+
+    - id: "safety_alignment"
+      name_zh: "安全、对齐与红队"
+      definition: "新闻核心在于风险与防护：越狱、提示注入、红队、安全评估、漏洞披露与防护机制。"
+      include: ["越狱/提示注入/对抗攻击","红队报告与安全评估","风险事件与防护策略"]
+      exclude: ["法规条文与监管趋势→政策与监管","隐私合规治理→隐私与合规","偏研究论文且非事件/防护主线→研究与论文"]
+      tie_breaker: "‘漏洞/攻击/越狱/防护/红队’且为主线就选本类。"
+      keywords: ["safety","alignment","red team","jailbreak","prompt injection","漏洞","攻击","防护","审计"]
+
+    - id: "privacy_compliance"
+      name_zh: "隐私与合规"
+      definition: "新闻核心在于隐私与企业合规：PII、数据留存、访问控制、审计、GDPR 等合规实践与要求。"
+      include: ["PII/敏感数据处理与留存","企业合规框架与审计要求","数据隔离与安全认证（合规主线）"]
+      exclude: ["国家立法与监管趋势→政策与监管","攻防漏洞为主→安全、对齐与红队"]
+      tie_breaker: "关注‘能否合规使用/如何合规’，而非‘被如何攻击’。"
+      keywords: ["privacy","PII","GDPR","compliance","data governance","隐私","合规","数据治理"]
+
+    - id: "policy_regulation"
+      name_zh: "政策与监管"
+      definition: "新闻核心在于政府/监管/标准组织对 AI 的规则、限制与标准制定，关注法律政策变化及行业约束。"
+      include: ["AI 法案/条例/监管指南","标准制定","出口管制与国家安全限制","监管趋势"]
+      exclude: ["企业内部合规实践→隐私与合规","融资并购与财报→商业与资本"]
+      tie_breaker: "主体是政府/监管/标准机构，讨论规则与约束即本类。"
+      keywords: ["regulation","policy","AI Act","bill","standard","监管","政策","法案","出口管制"]
+
+    - id: "business_finance"
+      name_zh: "商业与资本"
+      definition: "新闻核心在于商业与资本动作：融资、并购、财报、商业模式、合作与竞争格局，关注钱、交易、增长与策略。"
+      include: ["融资/并购/投资/估值","财报与收入","定价策略与市场份额","战略合作与竞争"]
+      exclude: ["产品功能更新→产品与应用","法规监管→政策与监管","硬件算力技术→基础设施与算力"]
+      tie_breaker: "最重要信息若是融资多少/并购谁/财报如何/竞争合作，选本类。"
+      keywords: ["funding","acquisition","earnings","revenue","valuation","partnership","融资","并购","财报","估值","合作"]
