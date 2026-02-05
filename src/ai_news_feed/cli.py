@@ -67,6 +67,10 @@ def main(argv=None):
         blog_dir_abs = os.path.abspath(blog_dir)
         weekly_path_abs = os.path.abspath(args.week_file)
         rel_link = os.path.relpath(weekly_path_abs, start=blog_dir_abs).replace(os.sep, "/")
+        if rel_link.endswith(".md"):
+            rel_link = rel_link[:-3]
+        if not rel_link.startswith("../"):
+            rel_link = f"../{rel_link.lstrip('./')}"
         weekly_title = os.path.basename(args.week_file)
         for line in week_md.splitlines():
             if line.startswith("# "):

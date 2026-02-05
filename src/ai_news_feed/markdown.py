@@ -60,7 +60,8 @@ def _render_item(lines: List[str], item: Dict[str, Any]) -> None:
     title = item.get("title") or "(Untitled)"
     lines.append(f"### {title}")
     lines.append(f"- 来源：{item.get('source')}")
-    lines.append(f"- 发布：{_format_datetime(item.get('published_at'))}")
+    published_or_collected = item.get("published_at") or item.get("collected_at")
+    lines.append(f"- 发布：{_format_datetime(published_or_collected)}")
     lines.append(f"- 收录：{_format_datetime(item.get('collected_at'))}")
     lines.append(f"- 链接：{item.get('url')}")
     lines.append("")

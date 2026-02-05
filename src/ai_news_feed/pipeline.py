@@ -286,6 +286,10 @@ def run_pipeline(cfg: Dict[str, Any]) -> None:
             blog_dir_abs = os.path.abspath(blog_dir)
             weekly_path_abs = os.path.abspath(out_path)
             rel_link = os.path.relpath(weekly_path_abs, start=blog_dir_abs).replace(os.sep, "/")
+            if rel_link.endswith(".md"):
+                rel_link = rel_link[:-3]
+            if not rel_link.startswith("../"):
+                rel_link = f"../{rel_link.lstrip('./')}"
             now = now_local()
             year, week, _ = now.isocalendar()
             weekly_title = f"AI Weekly Digest — {year}-W{week:02d}"
