@@ -21,6 +21,7 @@ from .blog import (
     blog_output_filename,
     ensure_frontmatter,
     extract_title,
+    normalize_author,
     render_blog_from_week_md,
     write_blog,
 )
@@ -282,10 +283,13 @@ def run_pipeline(cfg: Dict[str, Any]) -> None:
             blog_dir = cfg["output"].get("blog_path", cfg["output"]["path"])
             blog_path = os.path.join(blog_dir, blog_name)
             os.makedirs(blog_dir, exist_ok=True)
-            rel_link = os.path.relpath(out_path, start=blog_dir).replace(os.sep, "/")
+            blog_dir_abs = os.path.abspath(blog_dir)
+            weekly_path_abs = os.path.abspath(out_path)
+            rel_link = os.path.relpath(weekly_path_abs, start=blog_dir_abs).replace(os.sep, "/")
             now = now_local()
             year, week, _ = now.isocalendar()
             weekly_title = f"AI Weekly Digest — {year}-W{week:02d}"
+            blog_md = normalize_author(blog_md)
             blog_title = extract_title(blog_md, weekly_title)
             blog_md = ensure_frontmatter(blog_md, blog_title, now.strftime("%Y-%m-%d"))
             blog_md = append_reference_section(blog_md, weekly_title, rel_link)

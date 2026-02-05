@@ -26,7 +26,7 @@ def write_blog(content: str, out_path: str) -> None:
 
 def append_reference_section(blog_md: str, title: str, link: str) -> str:
     body = blog_md.rstrip()
-    return f"{body}\n\n## 参考\n- [{title}]({link})\n"
+    return f"{body}\n\n### 参考\n- [{title}]({link})\n"
 
 
 def extract_title(markdown: str, fallback: str) -> str:
@@ -53,3 +53,11 @@ def ensure_frontmatter(blog_md: str, title: str, date_str: str) -> str:
         "---\n\n"
     )
     return frontmatter + blog_md
+
+
+def normalize_author(blog_md: str) -> str:
+    return (
+        blog_md.replace("作者：AI周报撰写团队", "Written by Jeremy")
+        .replace("作者:AI周报撰写团队", "Written by Jeremy")
+        .replace("作者: AI周报撰写团队", "Written by Jeremy")
+    )

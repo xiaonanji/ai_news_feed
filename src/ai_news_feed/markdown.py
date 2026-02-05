@@ -73,8 +73,9 @@ def _render_item(lines: List[str], item: Dict[str, Any]) -> None:
     lines.append(item.get("so_what", ""))
     lines.append("")
     tags = item.get("tags", [])
-    tag_str = " ".join(f"#{t}" for t in tags)
+    tag_str = " / ".join(tags)
     lines.append(f"**标签**：{tag_str}")
+    lines.append("")
     lines.append("---")
     lines.append("")
 
