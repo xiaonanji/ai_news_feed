@@ -6,7 +6,15 @@ from dotenv import load_dotenv
 
 from .config import load_config
 from .db import init_db
-from .blog import blog_output_filename, render_blog_from_week_md, write_blog
+from .blog import (
+    append_reference_section,
+    blog_output_filename,
+    ensure_frontmatter,
+    extract_title,
+    render_blog_from_week_md,
+    write_blog,
+)
+from .utils import now_local
 from .pipeline import run_pipeline
 
 
@@ -52,7 +60,18 @@ def main(argv=None):
             week_md = f.read()
         blog_md = render_blog_from_week_md(week_md, cfg)
         blog_name = blog_output_filename(cfg)
-        out_path = os.path.join(cfg["output"]["path"], blog_name)
+        blog_dir = cfg["output"].get("blog_path", cfg["output"]["path"])
+        os.makedirs(blog_dir, exist_ok=True)
+        out_path = os.path.join(blog_dir, blog_name)
+        rel_link = os.path.relpath(args.week_file, start=blog_dir).replace(os.sep, "/")
+        weekly_title = os.path.basename(args.week_file)
+        for line in week_md.splitlines():
+            if line.startswith("# "):
+                weekly_title = line[2:].strip()
+                break
+        blog_title = extract_title(blog_md, weekly_title)
+        blog_md = ensure_frontmatter(blog_md, blog_title, now_local().strftime("%Y-%m-%d"))
+        blog_md = append_reference_section(blog_md, weekly_title, rel_link)
         write_blog(blog_md, out_path)
         return 0
 

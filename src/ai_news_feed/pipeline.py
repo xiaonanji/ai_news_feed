@@ -16,7 +16,14 @@ from .db import (
     upsert_feed,
 )
 from .llm import summarize_and_classify
-from .blog import blog_output_filename, render_blog_from_week_md, write_blog
+from .blog import (
+    append_reference_section,
+    blog_output_filename,
+    ensure_frontmatter,
+    extract_title,
+    render_blog_from_week_md,
+    write_blog,
+)
 from .markdown import output_filename, render_weekly
 from .rss import fetch_feed_entries
 from .utils import now_local
@@ -272,7 +279,16 @@ def run_pipeline(cfg: Dict[str, Any]) -> None:
         if cfg["output"].get("include_weekly_blog", True):
             blog_md = render_blog_from_week_md(content_md, cfg)
             blog_name = blog_output_filename(cfg)
-            blog_path = os.path.join(cfg["output"]["path"], blog_name)
+            blog_dir = cfg["output"].get("blog_path", cfg["output"]["path"])
+            blog_path = os.path.join(blog_dir, blog_name)
+            os.makedirs(blog_dir, exist_ok=True)
+            rel_link = os.path.relpath(out_path, start=blog_dir).replace(os.sep, "/")
+            now = now_local()
+            year, week, _ = now.isocalendar()
+            weekly_title = f"AI Weekly Digest — {year}-W{week:02d}"
+            blog_title = extract_title(blog_md, weekly_title)
+            blog_md = ensure_frontmatter(blog_md, blog_title, now.strftime("%Y-%m-%d"))
+            blog_md = append_reference_section(blog_md, weekly_title, rel_link)
             write_blog(blog_md, blog_path)
 
         for item in new_items:

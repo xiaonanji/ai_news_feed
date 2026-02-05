@@ -5,6 +5,21 @@ from typing import Any, Dict, List
 from .utils import now_local, to_local
 
 
+def _frontmatter(title: str, date_str: str) -> str:
+    return (
+        "---\n"
+        f"title: {title}\n"
+        "description:\n"
+        f"date: {date_str}\n"
+        f"scheduled: {date_str}\n"
+        "tags:\n"
+        "  - AI\n"
+        "  - Jeremy\n"
+        "layout: layouts/post.njk\n"
+        "---\n\n"
+    )
+
+
 def _format_datetime(value: str) -> str:
     if not value:
         return "Unknown"
@@ -67,7 +82,8 @@ def _render_item(lines: List[str], item: Dict[str, Any]) -> None:
 def render_weekly(items: List[Dict[str, Any]], cfg: Dict[str, Any]) -> str:
     now = now_local()
     year, week, _ = now.isocalendar()
-    lines = [f"# AI Weekly Digest — {year}-W{week:02d}", f"生成时间：{now.strftime('%Y-%m-%d %H:%M')} (Australia/Melbourne)", ""]
+    title = f"AI Weekly Digest — {year}-W{week:02d}"
+    lines = [f"# {title}", f"生成时间：{now.strftime('%Y-%m-%d %H:%M')} (Australia/Melbourne)", ""]
 
     taxonomy = cfg.get("taxonomy", {})
     categories = taxonomy.get("categories", [])
@@ -77,7 +93,10 @@ def render_weekly(items: List[Dict[str, Any]], cfg: Dict[str, Any]) -> str:
         sorted_items = sort_items(items, cfg["output"].get("append_order", "newest_first"))
         for item in sorted_items:
             _render_item(lines, item)
-        return "\n".join(lines)
+        body = "\n".join(lines)
+        if cfg["output"].get("include_frontmatter", False):
+            return _frontmatter(title, now.strftime("%Y-%m-%d")) + body
+        return body
 
     grouped: Dict[str, List[Dict[str, Any]]] = {c["id"]: [] for c in categories}
     for item in items:
@@ -92,7 +111,10 @@ def render_weekly(items: List[Dict[str, Any]], cfg: Dict[str, Any]) -> str:
         for item in cat_items:
             _render_item(lines, item)
 
-    return "\n".join(lines)
+    body = "\n".join(lines)
+    if cfg["output"].get("include_frontmatter", False):
+        return _frontmatter(title, now.strftime("%Y-%m-%d")) + body
+    return body
 
 
 def output_filename(cfg: Dict[str, Any]) -> str:

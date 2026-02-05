@@ -85,7 +85,7 @@ def extract_text_from_response(resp: Any) -> str:
 
 
 @retry(stop=stop_after_attempt(3), wait=wait_fixed(1))
-def call_openai(model: str, api_key: str, user_prompt: str, timeout: int) -> str:
+def call_openai(model: str, api_key: str, user_prompt: str, timeout: int, system_prompt: str = SYSTEM_PROMPT) -> str:
     from openai import OpenAI
 
     client = OpenAI(api_key=api_key)
@@ -93,7 +93,7 @@ def call_openai(model: str, api_key: str, user_prompt: str, timeout: int) -> str
         resp = client.responses.create(
             model=model,
             input=[
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
             timeout=timeout,
@@ -103,7 +103,7 @@ def call_openai(model: str, api_key: str, user_prompt: str, timeout: int) -> str
         resp = client.chat.completions.create(
             model=model,
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
             timeout=timeout,
@@ -174,4 +174,5 @@ def generate_weekly_blog(week_md: str, cfg: Dict[str, Any]) -> str:
         api_key=api_key,
         user_prompt=user_prompt,
         timeout=cfg["summarizer"].get("timeout_sec", 60),
+        system_prompt=BLOG_SYSTEM_PROMPT,
     )

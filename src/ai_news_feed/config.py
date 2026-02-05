@@ -34,6 +34,7 @@ def apply_defaults(cfg: Dict[str, Any]) -> None:
     cfg["output"].setdefault("include_frontmatter", False)
     cfg["output"].setdefault("include_weekly_blog", True)
     cfg["output"].setdefault("blog_filename_template", "ai_news_{year}-W{week}_summary.md")
+    cfg["output"].setdefault("blog_path", cfg["output"].get("path", "./output"))
 
     cfg.setdefault("dedup", {"key": "url_or_guid"})
     cfg.setdefault("summarizer", {})
